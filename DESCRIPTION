@@ -1,18 +1,30 @@
 Package: blblm
 Type: Package
-Title: What the Package Does (Title Case)
+Title: Linear Regression and Logistic Regression using Little Bag of Bootstraps
 Version: 0.1.0
-Author: Who wrote it
-Maintainer: The package maintainer <yourself@somewhere.net>
-Description: More about what it does (maybe more than one line)
-    Use four spaces when indenting paragraphs within the Description.
-License: What license is it under?
+Author: Yiling Chen
+Maintainer: The package maintainer <ylnchen@ucdavis.edu>
+Description: This package has functions for running little bag of bootstraps on
+    linear regression models and logistic regression model on datasets.
+    For the linear regression model, users can determine the regression coefficients (beta heads),
+    the estimate of variance of errors (sigma), confidence interval and prediction interval on new data.
+    For logistic regression model, users can determine the regression coefficients (beta heads),
+    as well as confidence interval on particular coefficient or prediction interval on coefficients.
+    For both function inside the pakage, users can also decide if they want to use parallel computing 
+    by changing the option in function. 
+License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
 Suggests: 
-    testthat (>= 2.1.0)
+    testthat (>= 2.1.0),
+    knitr,
+    rmarkdown
 Imports: 
     purrr,
+    furrr,
+    tidyverse,
+    utils,
     magrittr
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.0.2
+RoxygenNote: 7.1.1
+VignetteBuilder: knitr

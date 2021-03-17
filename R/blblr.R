@@ -12,33 +12,27 @@
 # from https://github.com/jennybc/googlesheets/blob/master/R/googlesheets.R
 utils::globalVariables(c("."))
 
-
-#' @param formula linear regression formula
+#' @param formula logistic regression formula
 #' @param data dataset
 #' @param m number of split, default = 10
 #' @param B number of bootstrap, default = 5000
 #' @param parallel estimation being calculated parallely, default = FALSE
 #' @param threads number of workers using to run the estimation, default = 4
-#' @name blblm
-#' @title blblm
 #' @export
-blblm <- function(formula, data, m = 10, B = 5000, parallel = FALSE, threads = 4) {
-  data_list <- split_data(data, m)
+#' Logistic regression version of bag of little bootstraps
+blblr <- function(formula, data, m = 10, B = 5000, parallel = FALSE, threads = 4){
   if (parallel){
     suppressWarnings(future::plan(multiprocess, workers = threads))
-    estimates <- future_map(
-      data_list,
-      ~ lm_each_subsample(formula = formula, data = ., n = nrow(data), B = B))
+    data_list <- split_data(data, m)
+    estimates <- future_map(data_list,~lr_each_subsample(formula = formula, data = ., n = nrow(data), B = B))
   }else{
-    estimates <- map(
-      data_list,
-      ~ lm_each_subsample(formula = formula, data = ., n = nrow(data), B = B))
+    data_list <- split_data(data, m)
+    estimates <- map(data_list, ~lr_each_subsample(formula = formula, data = ., n = nrow(data), B = B))
   }
   res <- list(estimates = estimates, formula = formula)
-  class(res) <- "blblm"
+  class(res) <- "blblr"
   invisible(res)
 }
-
 
 #' @param data dataset
 #' @param m number of splits
@@ -48,96 +42,57 @@ split_data <- function(data, m) {
   data %>% split(idx)
 }
 
-
-#' @param formula linear regression formula
-#' @param data dataset
-#' @param n number of rows in each subset
-#' @param B number of bootstraps
 #' compute the estimates
-lm_each_subsample <- function(formula, data, n, B) {
-  # drop the original closure of formula,
-  # otherwise the formula will pick a wrong variable from the global scope.
-  environment(formula) <- environment()
-  m <- model.frame(formula, data)
-  X <- model.matrix(formula, m)
-  y <- model.response(m)
-  replicate(B, lm1(X, y, n), simplify = FALSE)
+lr_each_subsample <- function(formula, data, n, B) {
+  freqs <- rmultinom(1, n, rep(1, nrow(data)))
+  replicate(B, lr1(formula, data, freqs), simplify = FALSE)
 }
 
-#' @param X design matrix of dimension n * p
-#' @param y vector of observations of length n, or a matrix with n rows
+#' estimate the regression estimates based on given the number of repetitions
+lr1 <- function(formula, data, freqs){
+  environment(formula) <- environment()
+  fit <- glm(formula, family="binomial", data, weights = freqs, maxit=100)
+  list(coef = blbcoef(fit))
+}
+
+#' @param X a design matrix of dimension n * p
+#' @param y a vector of observations of length n, or a matrix with n rows
 #' @param n number of rows in each subset
 #' compute the regression estimates for a blb dataset
-lm1 <- function(X, y, n) {
+lr1 <- function(X, y, n){
   freqs <- as.vector(rmultinom(1, n, rep(1, nrow(X))))
-  fit <- lm.wfit(X, y, freqs)
-  list(coef = blbcoef(fit), sigma = blbsigma(fit))
+  fit <- glm.fit(X, y, freqs)
+  list(coef = blbcoef(fit))
 }
-
-
-#' @param fit linear regression model
-#' compute the coefficients from fit
-blbcoef <- function(fit) {
-  coef(fit)
-}
-
-
-#' @param fit linear regression model
-#' compute sigma from fit
-blbsigma <- function(fit) {
-  p <- fit$rank
-  e <- fit$residuals
-  w <- fit$weights
-  sqrt(sum(w * (e^2)) / (sum(w) - p))
-}
-
 
 #' @param x dataset for blblr model
 #' @export
-#' @method print blblm
-print.blblm <- function(x, ...) {
-  cat("blblm model:", capture.output(x$formula))
+#' @method print blblr
+print.blblr <- function(x, ...) {
+  cat("blblrodel:", capture.output(x$formula))
   cat("\n")
 }
 
-
-#' @param object blblm object
-#' @param confidence confidence interval, default = FALSE
-#' @param level level of confidence interval, default = 0.95
-#' @return variance of blblm estimates
-#' @name sigma.blblm
+#' @param object blblr model
+#' @param parallel calculate the mean parallely, default = FALSE
+#' @param threads number of workers using to run the calculation, default = 4
 #' @export
-#' @method sigma blblm
-sigma.blblm <- function(object, confidence = FALSE, level = 0.95, parallel = FALSE, threads = 4, ...) {
-  est <- object$estimates
-  sigma <- mean(map_dbl(est, ~ mean(map_dbl(., "sigma"))))
-  if (confidence) {
-    alpha <- 1 - 0.95
-    limits <- est %>%
-      map_mean(~ quantile(map_dbl(., "sigma"), c(alpha / 2, 1 - alpha / 2)), parallel, threads) %>%
-      set_names(NULL)
-    return(c(sigma = sigma, lwr = limits[1], upr = limits[2]))
-  } else {
-    return(sigma)
-  }
-}
-
-#' @param object blblm model
-#' @export
-#' @method coef blblm
-coef.blblm <- function(object, parallel = FALSE, threads = 4,...) {
+#' @method coef blblr
+coef.blblr <- function(object, parallel = FALSE, threads = 4,...) {
   est <- object$estimates
   map_mean(est, ~ map_cbind(., "coef") %>% rowMeans(), parallel, threads)
 }
 
 
-#' @param object blblm object
+#' @param object blblr object
 #' @param parm specifying which parameter for the confidence interval
 #' @param level level of confidence interval, default = 0.95
-#' @name confint.blblm
+#' @param parallel calculate the mean parallelly, default = FALSE
+#' @param threads number of workers using to run the calculation, default = 4
+#' @name confint.blblr
 #' @export
-#' @method confint blblm
-confint.blblm <- function(object, parm = NULL, level = 0.95, parallel = FALSE, threads = 4, ...) {
+#' @method confint blblr
+confint.blblr <- function(object, parm = NULL, level = 0.95, parallel = FALSE, threads = 4, ...) {
   if (is.null(parm)) {
     parm <- attr(terms(object$formula), "term.labels")
   }
@@ -154,20 +109,22 @@ confint.blblm <- function(object, parm = NULL, level = 0.95, parallel = FALSE, t
   out
 }
 
-#' @param object blblm object
+#' @param object blblr object
 #' @param new_data new dataset
-#' @param confidence confidence interval, default = FALSE
+#' @param confidence confidence interval, default = FALSE; TRUE --> prediction interval
 #' @param level level of prediction interval, default = 0.95
-#' @name predict.blblm
+#' @param parallel calculate the mean parallelly, default = FALSE
+#' @param threads number of workers using to run the calculation, default = 4
+#' @name predict.blblr
 #' @export
-#' @method predict blblm
-predict.blblm <- function(object, new_data, confidence = FALSE, level = 0.95, parallel = FALSE, threads = 4, ...) {
+#' @method predict blblr
+predict.blblr <- function(object, new_data, confidence = FALSE, level = 0.95, parallel = FALSE, threads = 4, ...) {
   est <- object$estimates
   X <- model.matrix(reformulate(attr(terms(object$formula), "term.labels")), new_data)
   if (confidence) {
     map_mean(est, ~ map_cbind(., ~ X %*% .$coef) %>%
-      apply(1, mean_lwr_upr, level = level) %>%
-      t(), parallel, threads)
+               apply(1, mean_lwr_upr, level = level) %>%
+               t(), parallel, threads)
   } else {
     map_mean(est, ~ map_cbind(., ~ X %*% .$coef) %>% rowMeans())
   }
