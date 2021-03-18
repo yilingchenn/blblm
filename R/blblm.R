@@ -1,6 +1,7 @@
 #' @import purrr
 #' @import furrr
 #' @import stats
+#' @import future
 #' @import tidyverse
 #' @import utils
 #' @importFrom magrittr %>%
@@ -11,7 +12,6 @@
 ## quiets concerns of R CMD check re: the .'s that appear in pipelines
 # from https://github.com/jennybc/googlesheets/blob/master/R/googlesheets.R
 utils::globalVariables(c("."))
-
 
 #' @param formula linear regression formula
 #' @param data dataset
@@ -25,7 +25,8 @@ utils::globalVariables(c("."))
 blblm <- function(formula, data, m = 10, B = 5000, parallel = FALSE, threads = 4) {
   data_list <- split_data(data, m)
   if (parallel){
-    suppressWarnings(future::plan(multiprocess, workers = threads))
+    suppressWarnings(plan(multiprocess, workers = threads))
+    options(future.rng.onMisuse = "ignore")
     estimates <- future_map(
       data_list,
       ~ lm_each_subsample(formula = formula, data = ., n = nrow(data), B = B))
@@ -61,6 +62,7 @@ lm_each_subsample <- function(formula, data, n, B) {
   m <- model.frame(formula, data)
   X <- model.matrix(formula, m)
   y <- model.response(m)
+  # nrow(data) = n/m, the split data
   replicate(B, lm1(X, y, n), simplify = FALSE)
 }
 
@@ -104,6 +106,8 @@ print.blblm <- function(x, ...) {
 #' @param object blblm object
 #' @param confidence confidence interval, default = FALSE
 #' @param level level of confidence interval, default = 0.95
+#' @param parallel estimation being calculated parallely, default = FALSE
+#' @param threads number of workers using to run the estimation, default = 4
 #' @return variance of blblm estimates
 #' @name sigma.blblm
 #' @export
@@ -123,6 +127,8 @@ sigma.blblm <- function(object, confidence = FALSE, level = 0.95, parallel = FAL
 }
 
 #' @param object blblm model
+#' @param parallel estimation being calculated parallely, default = FALSE
+#' @param threads number of workers using to run the estimation, default = 4
 #' @export
 #' @method coef blblm
 coef.blblm <- function(object, parallel = FALSE, threads = 4,...) {
@@ -130,10 +136,11 @@ coef.blblm <- function(object, parallel = FALSE, threads = 4,...) {
   map_mean(est, ~ map_cbind(., "coef") %>% rowMeans(), parallel, threads)
 }
 
-
 #' @param object blblm object
 #' @param parm specifying which parameter for the confidence interval
 #' @param level level of confidence interval, default = 0.95
+#' @param parallel estimation being calculated parallely, default = FALSE
+#' @param threads number of workers using to run the estimation, default = 4
 #' @name confint.blblm
 #' @export
 #' @method confint blblm
@@ -144,8 +151,7 @@ confint.blblm <- function(object, parm = NULL, level = 0.95, parallel = FALSE, t
   alpha <- 1 - level
   est <- object$estimates
   out <- map_rbind(parm, function(p) {
-    map_mean(est, ~ map_dbl(., list("coef", p)) %>% quantile(c(alpha / 2, 1 - alpha / 2))
-             , parallel, threads)
+    map_mean(est, ~ map_dbl(., list("coef", p)) %>% quantile(c(alpha / 2, 1 - alpha / 2)), parallel, threads)
   })
   if (is.vector(out)) {
     out <- as.matrix(t(out))
@@ -158,6 +164,8 @@ confint.blblm <- function(object, parm = NULL, level = 0.95, parallel = FALSE, t
 #' @param new_data new dataset
 #' @param confidence confidence interval, default = FALSE
 #' @param level level of prediction interval, default = 0.95
+#' @param parallel estimation being calculated parallely, default = FALSE
+#' @param threads number of workers using to run the estimation, default = 4
 #' @name predict.blblm
 #' @export
 #' @method predict blblm
@@ -169,7 +177,7 @@ predict.blblm <- function(object, new_data, confidence = FALSE, level = 0.95, pa
       apply(1, mean_lwr_upr, level = level) %>%
       t(), parallel, threads)
   } else {
-    map_mean(est, ~ map_cbind(., ~ X %*% .$coef) %>% rowMeans())
+    map_mean(est, ~ map_cbind(., ~ X %*% .$coef) %>% rowMeans(), parallel, threads)
   }
 }
 
@@ -181,7 +189,8 @@ mean_lwr_upr <- function(x, level = 0.95) {
 
 map_mean <- function(.x, .f, parallel, threads, ...) {
   if (parallel){
-    suppressWarnings(future::plan(multiprocess, workers = threads))
+    suppressWarnings(plan(multiprocess, workers = threads))
+    options(future.rng.onMisuse = "ignore")
     (future_map(.x, .f, ...) %>% reduce(`+`)) / length(.x)
   }else{
     (map(.x, .f, ...) %>% reduce(`+`)) / length(.x)

@@ -4,17 +4,7 @@
 \alias{lr1}
 \title{estimate the regression estimates based on given the number of repetitions}
 \usage{
-lr1(X, y, n)
-
-lr1(X, y, n)
-}
-\arguments{
-\item{X}{a design matrix of dimension n * p}
-
-\item{y}{a vector of observations of length n, or a matrix with n rows}
-
-\item{n}{number of rows in each subset
-compute the regression estimates for a blb dataset}
+lr1(formula, data, freqs)
 }
 \description{
 estimate the regression estimates based on given the number of repetitions

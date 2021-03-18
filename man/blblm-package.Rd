@@ -4,6 +4,7 @@
 \name{blblm-package}
 \alias{blblm}
 \alias{blblm-package}
+\alias{_PACKAGE}
 \title{blblm: Linear Regression and Logistic Regression using Little Bag of Bootstraps}
 \description{
 This package has functions for running little bag of bootstraps on
@@ -27,5 +28,6 @@ This package has functions for running little bag of bootstraps on
 \details{
 Linear Regression with Little Bag of Bootstraps
 
-Linear Regression with Little Bag of Bootstraps
+_PACKAGE
+Logistic Regression with Little Bag of Bootstraps
 }
